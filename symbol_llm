@@ -1,0 +1,63 @@
+import torch
+from datasets import load_dataset
+from transformers import AutoModelForCausalLM, AutoTokenizer, Trainer, TrainingArguments, DataCollatorForLanguageModeling
+
+def prepare_ds():
+    '''
+    DatasetDict({
+        train: Dataset({
+            features: ['dataset', 'id', 'prompt', 'completion'],
+            num_rows: 975345
+        })
+    })
+
+    example:{'dataset': 'chebi', 'id': 'chebi_7655',
+    'prompt': 'Render the natural language description of the molecule into the corresponding SMILES representation.The natural language question is: 
+    The molecule is the conjugate base of pelargonidin 3-O-rutinoside; major species at pH 7.3. It is a conjugate base of a pelargonidin 3-O-rutinoside.
+    \nThe corresponding SMILES representation is:\n', 
+    'completion': 'C[C@H]1[C@@H]([C@H]([C@H]([C@@H](O1)OC[C@@H]2[C@H]([C@@H]([C@H]([C@@H](O2)OC3=C(OC4=CC(=O)C=C(C4=C3)O)C5=CC=C(C=C5)O)O)O)O)O)O)O'}
+    '''
+    symbolic_dataset = load_dataset("Symbol-LLM/Symbolic_Collection")
+    # need general dataset?
+    train_data = symbolic_dataset["train"]
+    
+    # Manually splitting into test and train data
+    train_test_split = train_data.train_test_split(test_size=0.2, seed=42)  # 80% train, 20% test
+    train_data = train_test_split["train"]
+    test_data = train_test_split["test"]
+    
+    return train_data, test_data
+
+class SymbolLLM:
+    def __init__(self, model_name):
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.model = AutoModelForCausalLM.from_pretrained(model_name)   
+
+    def injection_stage(self, train_data):
+        training_args = TrainingArguments("test-trainer") #hugging face trainer
+
+        data_collator = DataCollatorForLanguageModeling(tokenizer=self.tokenizer, mlm=False)
+
+        trainer = Trainer(
+            model=self.model,
+            args=training_args,
+            train_dataset=train_data,
+            tokenizer=self.tokenizer,
+            data_collator=data_collator
+        )
+
+        # figure out how to implement loss func
+
+        trainer.train()
+
+    def infusion_stage(self, ds_subset, dg_data):
+        pass
+
+def main():
+    train_data, test_data = prepare_ds()
+
+    model_name = "Symbol-LLM/Symbol-LLM-7B-Instruct"
+    symbol_llm = SymbolLLM(model_name)
+
+if __name__ == "__main__":
+    main()
