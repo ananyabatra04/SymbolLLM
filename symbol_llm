@@ -1,63 +1,78 @@
-import torch
-from datasets import load_dataset
-from transformers import AutoModelForCausalLM, AutoTokenizer, Trainer, TrainingArguments, DataCollatorForLanguageModeling
+from pyswip import Prolog
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
-def prepare_ds():
-    '''
-    DatasetDict({
-        train: Dataset({
-            features: ['dataset', 'id', 'prompt', 'completion'],
-            num_rows: 975345
-        })
-    })
+tokenizer = AutoTokenizer.from_pretrained("Symbol-LLM/Symbol-LLM-7B-Instruct")
+model = AutoModelForCausalLM.from_pretrained("Symbol-LLM/Symbol-LLM-7B-Instruct")
 
-    example:{'dataset': 'chebi', 'id': 'chebi_7655',
-    'prompt': 'Render the natural language description of the molecule into the corresponding SMILES representation.The natural language question is: 
-    The molecule is the conjugate base of pelargonidin 3-O-rutinoside; major species at pH 7.3. It is a conjugate base of a pelargonidin 3-O-rutinoside.
-    \nThe corresponding SMILES representation is:\n', 
-    'completion': 'C[C@H]1[C@@H]([C@H]([C@H]([C@@H](O1)OC[C@@H]2[C@H]([C@@H]([C@H]([C@@H](O2)OC3=C(OC4=CC(=O)C=C(C4=C3)O)C5=CC=C(C=C5)O)O)O)O)O)O)O'}
-    '''
-    symbolic_dataset = load_dataset("Symbol-LLM/Symbolic_Collection")
-    # need general dataset?
-    train_data = symbolic_dataset["train"]
-    
-    # Manually splitting into test and train data
-    train_test_split = train_data.train_test_split(test_size=0.2, seed=42)  # 80% train, 20% test
-    train_data = train_test_split["train"]
-    test_data = train_test_split["test"]
-    
-    return train_data, test_data
 
-class SymbolLLM:
-    def __init__(self, model_name):
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModelForCausalLM.from_pretrained(model_name)   
-
-    def injection_stage(self, train_data):
-        training_args = TrainingArguments("test-trainer") #hugging face trainer
-
-        data_collator = DataCollatorForLanguageModeling(tokenizer=self.tokenizer, mlm=False)
-
-        trainer = Trainer(
-            model=self.model,
-            args=training_args,
-            train_dataset=train_data,
-            tokenizer=self.tokenizer,
-            data_collator=data_collator
+def fetch_prolog_code(prompt):
+    """
+    Uses Symbol LLM model to generate the Prolog code based on the given prompt.
+    """
+    try:
+        inputs = tokenizer(prompt, return_tensors="pt", truncation=True, padding=True)
+        
+        outputs = model.generate(
+            **inputs,
+            max_length=512,
+            num_return_sequences=1,
+            temperature=0.7
         )
+        
+        prolog_code = tokenizer.decode(outputs[0], skip_special_tokens=True)
+        return prolog_code.strip()
 
-        # figure out how to implement loss func
+    except Exception as e:
+        print(f"Error fetching Prolog code from Hugging Face: {e}")
+        return None
+    
+def format_statements(prolog_code):
+    """
+    Reformat Prolog code to ensure statements are properly grouped and complete.
+    """
+    statements, temp = [], []
+   
+    for line in prolog_code.splitlines(): # split by new line
+        line = line.strip()
+        if line and not line.startswith("%"): # ignore comments and empty lines
+            temp.append(line)
+            if line.endswith('.'):
+                statements.append(" ".join(temp))
+                temp.clear()
+    
+    return statements
 
-        trainer.train()
+def execute_code(prolog_code, query):
+    """
+    Load and execute Prolog code to run a query against it.
+    """
+    prolog = Prolog()
+    statements = format_statements(prolog_code)
+    
+    try:
+        for smt in statements:
+            prolog.assertz(smt.rstrip('.'))  # Add fact or rule to knowledge base
+        
+        return list(prolog.query(query))  # Execute the query
+    except Exception as error:
+        raise Exception(f"Prolog execution failed: {error}")
 
-    def infusion_stage(self, ds_subset, dg_data):
-        pass
-
-def main():
-    train_data, test_data = prepare_ds()
-
-    model_name = "Symbol-LLM/Symbol-LLM-7B-Instruct"
-    symbol_llm = SymbolLLM(model_name)
+def run_baseline_test():
+    prompt = "Define parent-child relationships for mary and others and a rule for grandparent in Prolog."
+    prolog_code = fetch_prolog_code(prompt)
+    
+    if prolog_code:
+        print("Prolog Code:\n", prolog_code)
+    
+        test_query = "grandparent(mary, X)."  # defining the query to run
+        
+        try:
+            results = execute_code(prolog_code, test_query)
+            print("Query Results:", results)
+        except Exception as error:
+            print(f"Error during Prolog execution: {error}")
+    else:
+        print("Failed to fetch Prolog code.")
 
 if __name__ == "__main__":
-    main()
+    run_baseline_test()
