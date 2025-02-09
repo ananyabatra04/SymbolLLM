@@ -1,78 +1,127 @@
+# https://g.co/gemini/share/d0ca1d77521d
+# https://g.co/gemini/share/7a8498ffb37b
+
+import openai
+import os
 from pyswip import Prolog
-from transformers import AutoModelForCausalLM, AutoTokenizer
+import requests
+import json
 
-tokenizer = AutoTokenizer.from_pretrained("Symbol-LLM/Symbol-LLM-7B-Instruct")
-model = AutoModelForCausalLM.from_pretrained("Symbol-LLM/Symbol-LLM-7B-Instruct")
+import os
+# from dotenv import load_dotenv  # For .env files
 
+# Load environment variables from .env file (if you're using one)
+# load_dotenv()
 
-def fetch_prolog_code(prompt):
-    """
-    Uses Symbol LLM model to generate the Prolog code based on the given prompt.
-    """
-    try:
-        inputs = tokenizer(prompt, return_tensors="pt", truncation=True, padding=True)
-        
-        outputs = model.generate(
-            **inputs,
-            max_length=512,
-            num_return_sequences=1,
-            temperature=0.7
-        )
-        
-        prolog_code = tokenizer.decode(outputs[0], skip_special_tokens=True)
-        return prolog_code.strip()
+# Get the API key
+HF_API_KEY = os.environ.get("HF_API_KEY")
 
-    except Exception as e:
-        print(f"Error fetching Prolog code from Hugging Face: {e}")
-        return None
-    
-def format_statements(prolog_code):
-    """
-    Reformat Prolog code to ensure statements are properly grouped and complete.
-    """
-    statements, temp = [], []
+# Model name
+MODEL_NAME = "Symbol-LLM/Symbol-LLM-7B-Instruct"
+
+# API endpoint
+API_URL = f"https://api-inference.huggingface.co/models/{MODEL_NAME}"
+
+# Input text for the model
+prompt = "Translate 'Hello, how are you?' to French."
+
+# Request headers
+headers = {
+    "Authorization": f"Bearer {HF_API_KEY}",
+    "Content-Type": "application/json"
+}
+
+# Request payload (adjust parameters as needed for your model)
+payload = {
+    "inputs": prompt,
+    "options": {  # Model-specific parameters
+        "max_new_tokens": 50,  # Example: limit the response length
+        "temperature": 0.7,      # Example: control randomness (0.0 = deterministic, higher = more random)
+        "top_p": 0.95         # Example: nucleus sampling
+    }
+}
+
+try:
+    response = requests.post(API_URL, headers=headers, json=payload)
+    response.raise_for_status()  # Raise an exception for bad status codes (4xx or 5xx)
+
+    result = response.json()
+    generated_text = result[0]["generated_text"]  # Extract the generated text
+    print(generated_text)
+
+except requests.exceptions.RequestException as e:
+    print(f"Error: {e}")
+except (KeyError, IndexError) as e:
+    print(f"Error parsing response: {e}. Raw response: {response.text}")
+
+# def fetch_prolog_code(prompt):
+#     """
+#     Uses OpenAI API to generate Prolog code based on the given prompt.
+#     """
+#     try:
+#         response = openai.chat.completions.create(
+#             model="gpt-4o-mini",
+#             messages=[
+#                 {"role": "system", "content": "You're a Prolog expert. Provide only valid Prolog code, no extra explanations."},
+#                 {"role": "user", "content": prompt},
+#             ],
+#         )
+#         # Extract the response and clean unnecessary formatting
+#         response_dict = response.model_dump()    # <--- convert to dictionary
+#         code = response_dict['choices'][0]['message']['content'].strip()
+#         return code.replace("```prolog", "").replace("```", "").strip()
+
+#     except Exception as e:
+#         print(f"Error fetching Prolog code from OpenAI: {e}")
+#         return None
+
+# def format_statements(prolog_code):
+#     """
+#     Reformat Prolog code to ensure statements are properly grouped and complete.
+#     """
+#     statements, temp = [], []
    
-    for line in prolog_code.splitlines(): # split by new line
-        line = line.strip()
-        if line and not line.startswith("%"): # ignore comments and empty lines
-            temp.append(line)
-            if line.endswith('.'):
-                statements.append(" ".join(temp))
-                temp.clear()
+#     for line in prolog_code.splitlines(): # split by new line
+#         line = line.strip()
+#         if line and not line.startswith("%"): # ignore comments and empty lines
+#             temp.append(line)
+#             if line.endswith('.'):
+#                 statements.append(" ".join(temp))
+#                 temp.clear()
     
-    return statements
+#     return statements
 
-def execute_code(prolog_code, query):
-    """
-    Load and execute Prolog code to run a query against it.
-    """
-    prolog = Prolog()
-    statements = format_statements(prolog_code)
+# def execute_code(prolog_code, query):
+#     """
+#     Load and execute Prolog code to run a query against it.
+#     """
+#     prolog = Prolog()
+#     statements = format_statements(prolog_code)
     
-    try:
-        for smt in statements:
-            prolog.assertz(smt.rstrip('.'))  # Add fact or rule to knowledge base
+#     try:
+#         for smt in statements:
+#             prolog.assertz(smt.rstrip('.'))  # Add fact or rule to knowledge base
         
-        return list(prolog.query(query))  # Execute the query
-    except Exception as error:
-        raise Exception(f"Prolog execution failed: {error}")
+#         return list(prolog.query(query))  # Execute the query
+#     except Exception as error:
+#         raise Exception(f"Prolog execution failed: {error}")
 
-def run_baseline_test():
-    prompt = "Define parent-child relationships for mary and others and a rule for grandparent in Prolog."
-    prolog_code = fetch_prolog_code(prompt)
+# def run_baseline_test():
+#     prompt = "Define parent-child relationships for mary and others and a rule for grandparent in Prolog."
+#     prolog_code = fetch_prolog_code(prompt)
     
-    if prolog_code:
-        print("Prolog Code:\n", prolog_code)
+#     if prolog_code:
+#         print("Prolog Code:\n", prolog_code)
     
-        test_query = "grandparent(mary, X)."  # defining the query to run
+#         test_query = "grandparent(mary, X)."  # defining the query to run
         
-        try:
-            results = execute_code(prolog_code, test_query)
-            print("Query Results:", results)
-        except Exception as error:
-            print(f"Error during Prolog execution: {error}")
-    else:
-        print("Failed to fetch Prolog code.")
+#         try:
+#             results = execute_code(prolog_code, test_query)
+#             print("Query Results:", results)
+#         except Exception as error:
+#             print(f"Error during Prolog execution: {error}")
+#     else:
+#         print("Failed to fetch Prolog code.")
 
-if __name__ == "__main__":
-    run_baseline_test()
+# if __name__ == "__main__":
+#     run_baseline_test()
